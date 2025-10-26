@@ -16,10 +16,6 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true, // <-- important for cookies / auth
 }));
-
-// Handle preflight OPTIONS requests globally
-app.options("*", cors());
-
 app.use(express.json());
 
 // Connect to MongoDB
