@@ -9,12 +9,17 @@ const app = express();
 
 app.use(cors({
   origin: [
-    "http://localhost:8080",      // your local dev
-    "https://nexora-fallstephs-projects.vercel.app"   // your deployed frontend
+    "http://localhost:8080", // local dev
+    "https://nexora-fallstephs-projects.vercel.app", // deployed frontend
   ],
-  methods: ["GET", "POST"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true, // <-- important for cookies / auth
 }));
+
+// Handle preflight OPTIONS requests globally
+app.options("*", cors());
+
 app.use(express.json());
 
 // Connect to MongoDB
