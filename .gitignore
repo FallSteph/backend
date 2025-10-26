@@ -1,0 +1,15 @@
+# Node modules
+node_modules/
+
+# Environment variables (never push real credentials)
+.env
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+
+# Optional: build folders (if any)
+dist/
