@@ -10,7 +10,7 @@ const app = express();
 app.use(cors({
   origin: [
     "http://localhost:5173",      // your local dev
-    "https://nexora-sage.vercel.app"   // your deployed frontend
+    "https://nexora-fallstephs-projects.vercel.app"   // your deployed frontend
   ],
   methods: ["GET", "POST"],
   allowedHeaders: ["Content-Type", "Authorization"],
