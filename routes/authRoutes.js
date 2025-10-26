@@ -1,40 +1,45 @@
 import express from "express";
 import fetch from "node-fetch"; // or "undici" if using newer Node
+import { OAuth2Client } from "google-auth-library";
 import nodemailer from "nodemailer";
 import User from "../models/User.js"; // adjust path to your User model
 
 const router = express.Router();
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // ----------------- GOOGLE LOGIN -----------------
 router.post("/google", async (req, res) => {
   try {
     const { token } = req.body;
 
-    // Verify token with Google
-    const googleRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-      headers: { Authorization: `Bearer ${token}` },
+    // ✅ Verify ID token with Google
+    const ticket = await client.verifyIdToken({
+      idToken: token,
+      audience: process.env.GOOGLE_CLIENT_ID,
     });
-    const profile = await googleRes.json();
 
-    if (!profile.email) {
+    const payload = ticket.getPayload();
+    const { email, name, picture } = payload;
+
+    if (!email) {
       return res.status(400).json({ error: "Invalid Google token" });
     }
 
-    // Find or create user in MongoDB
-    let user = await User.findOne({ email: profile.email });
+    // ✅ Find or create user
+    let user = await User.findOne({ email });
     if (!user) {
       user = await User.create({
-        name: profile.name,
-        email: profile.email,
-        avatar: profile.picture,
-        password: "", // empty because login is via Google
+        name,
+        email,
+        avatar: picture,
+        password: "", // skip password for Google users
       });
     }
 
-    res.status(200).json({ message: "Login successful", user });
+    return res.status(200).json({ success: true, user });
   } catch (err) {
     console.error("Google login error:", err);
-    res.status(500).json({ error: "Google login failed" });
+    return res.status(500).json({ error: "Google login failed" });
   }
 });
 
