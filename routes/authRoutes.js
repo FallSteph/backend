@@ -75,28 +75,16 @@ router.post("/google", async (req, res) => {
     const googleRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
       headers: { Authorization: `Bearer ${token}` },
     });
-
-    if (!googleRes.ok) {
-      console.error("Google API error:", googleRes.status, await googleRes.text());
-      return res.status(400).json({ error: "Invalid Google token" });
-    }
-
     const profile = await googleRes.json();
 
     if (!profile.email) return res.status(400).json({ error: "Invalid Google token" });
 
     const { email, given_name, family_name, picture } = profile;
 
-    // Check if user already exists with local auth (prevent conflicts)
-    let user = await User.findOne({ email });
+    // Find or create user in MongoDB
+    let user = await User.findOne({ email, authProvider: "google" });
 
-    if (user) {
-      if (user.authProvider === "local") {
-        return res.status(400).json({ error: "Email already registered with local account" });
-      }
-      // If user exists with Google, just return it
-    } else {
-      // Create new Google user
+    if (!user) {
       user = await User.create({
         firstName: given_name,
         lastName: family_name,
