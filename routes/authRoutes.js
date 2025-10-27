@@ -2,8 +2,39 @@ import express from "express";
 import fetch from "node-fetch"; // or "undici" if using newer Node
 import nodemailer from "nodemailer";
 import User from "../models/User.js"; // adjust path to your User model
+import bcrypt from 'bcrypt';
 
 const router = express.Router();
+
+// ---------------- SIGNUP ----------------
+router.post("/signup", async (req, res) => {
+  try {
+    const { firstName, lastName, email, password } = req.body;
+
+    if (!firstName || !lastName || !email || !password) {
+      return res.status(400).json({ error: "Missing fields" });
+    }
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) return res.status(400).json({ error: "User already exists" });
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const newUser = await User.create({
+      firstName,
+      lastName,
+      email,
+      password: hashedPassword,
+      role: "user",
+      authProvider: "local",
+    });
+
+    return res.status(201).json({ success: true, user: newUser });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Signup failed" });
+  }
+});
 
 // ----------------- GOOGLE LOGIN -----------------
 router.post("/google", async (req, res) => {
