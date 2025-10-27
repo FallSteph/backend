@@ -147,4 +147,28 @@ router.post('/verify-code', (req, res) => {
   res.status(400).json({ success: false, message: 'Invalid code' });
 });
 
+// Reset password
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+
+    if (!email || !newPassword) {
+      return res.status(400).json({ error: 'Missing email or new password' });
+    }
+
+    const user = await User.findOne({ email, authProvider: 'local' });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    await user.save();
+
+    return res.json({ success: true, message: 'Password reset successfully' });
+  } catch (err) {
+    console.error('Reset password error:', err);
+    return res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
+
 export default router;
