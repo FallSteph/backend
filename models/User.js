@@ -1,9 +1,13 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema({
-  name: String,
-  email: { type: String, unique: true },
+  firstName: String,
+  lastName: String,
+  email: { type: String, unique: true, required: true },
+  password: String, // optional for Google users
+  role: { type: String, enum: ["user", "admin"], default: "user" },
   avatar: String,
+  authProvider: { type: String, enum: ["local", "google"], default: "local" },
 });
 
-export default mongoose.model('User', userSchema);
+export default mongoose.model("User", userSchema);

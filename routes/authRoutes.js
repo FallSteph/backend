@@ -9,27 +9,29 @@ const router = express.Router();
 router.post("/google", async (req, res) => {
   try {
     const { token } = req.body;
+    if (!token) return res.status(400).json({ error: "Token is required" });
 
-    // ✅ Fetch user info using the access token (since it’s NOT a JWT)
+    // Fetch user info from Google
     const googleRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
       headers: { Authorization: `Bearer ${token}` },
     });
-
     const profile = await googleRes.json();
-    if (!profile.email) {
-      return res.status(400).json({ error: "Invalid Google token" });
-    }
 
-    const { email, name, picture } = profile;
+    if (!profile.email) return res.status(400).json({ error: "Invalid Google token" });
 
-    // ✅ Find or create user
-    let user = await User.findOne({ email });
+    const { email, given_name, family_name, picture } = profile;
+
+    // Find or create user in MongoDB
+    let user = await User.findOne({ email, authProvider: "google" });
+
     if (!user) {
       user = await User.create({
-        name,
+        firstName: given_name,
+        lastName: family_name,
         email,
         avatar: picture,
-        password: "", // skip password for Google users
+        role: "user",
+        authProvider: "google",
       });
     }
 
