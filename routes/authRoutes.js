@@ -103,6 +103,19 @@ router.post("/google", async (req, res) => {
   }
 });
 
+// ---------------- EMAIL TRANSPORTER (using Brevo) ----------------
+const transporter = nodemailer.createTransport({
+  host: "smtp-relay.brevo.com",
+  port: 587,
+  secure: false,
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+  tls: {
+    rejectUnauthorized: false, // fix SSL issues on Render
+  },
+});
 
 // ---------------- FORGOT PASSWORD ----------------
 // --- STEP 1: Forgot Password (send reset code) ---
@@ -123,17 +136,8 @@ router.post("/forgot-password", async (req, res) => {
     user.resetCode = resetCode;
     await user.save();
 
-    // Setup mailer
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: "chachacharme05@gmail.com", // use app password
-        pass: "dpacyxdxgvblqahh",
-      },
-    });
-
     const mailOptions = {
-      from: "chachacharme05@gmail.com",
+      from: process.env.EMAIL_FROM,
       to: email,
       subject: "Password Reset Code",
       html: `<p>Hello, this is your Password Reset Code: <strong>${resetCode}</strong></p>`,
