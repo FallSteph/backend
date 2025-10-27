@@ -53,33 +53,32 @@ router.post("/signup", async (req, res) => {
 // ----------------- LOGIN -----------------
 router.post("/login", async (req, res) => {
   try {
-    const { email, password, recaptchaToken  } = req.body;
+    const { email, password, recaptchaToken } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ error: "Missing email or password" });
     }
-    
-    // 🧩 Verify reCAPTCHA token with Google
-    const recaptchaRes = await fetch(
-      `https://www.google.com/recaptcha/api/siteverify`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          secret: process.env.RECAPTCHA_SECRET_KEY,
-          response: recaptchaToken,
-        }),
-      }
-    );
+
+    // 🧩 Verify reCAPTCHA v2 token with Google
+    const recaptchaRes = await fetch("https://www.google.com/recaptcha/api/siteverify", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        secret: process.env.RECAPTCHA_SECRET_KEY,
+        response: recaptchaToken,
+      }),
+    });
 
     const recaptchaData = await recaptchaRes.json();
+console.log("🧠 reCAPTCHA verification response:", recaptchaData);
 
-    if (!recaptchaData.success || recaptchaData.score < 0.5) {
-      // score check for v3 (optional), ignore if v2
+
+    // ✅ For reCAPTCHA v2, only check `success`
+    if (!recaptchaData.success) {
       return res.status(400).json({ error: "Failed reCAPTCHA verification" });
     }
 
-    // ✅ If reCAPTCHA passes, continue normal login
+    // Continue with login
     const user = await User.findOne({ email, authProvider: "local" });
     if (!user) return res.status(400).json({ error: "Invalid credentials" });
 
