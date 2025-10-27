@@ -112,32 +112,42 @@ const verificationCodes = {};
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.EMAIL_USER,           // your Gmail address
-    pass: process.env.EMAIL_APP_PASSWORD,   // the 16-character App Password
+    user: process.env.EMAIL_USER, // your Gmail
+    pass: process.env.EMAIL_APP_PASSWORD, // Gmail App Password
   },
+});
+
+// Verify transporter connection at startup
+transporter.verify((err, success) => {
+  if (err) {
+    console.error("Transporter verification failed:", err);
+  } else {
+    console.log("Mailer ready to send emails");
+  }
 });
 
 // Send verification code
 router.post('/send-code', async (req, res) => {
   const { email } = req.body;
 
-  if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
+  if (!email) return res.status(400).json({ success: false, message: "Email is required" });
 
   const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit code
   verificationCodes[email] = code;
 
   try {
-    await transporter.sendMail({
-      from: `"Nexora" <${process.env.EMAIL_USER}>`,
+    const info = await transporter.sendMail({
+      from: `"Nexora Support" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: 'Password Reset Verification Code',
       text: `Your verification code is: ${code}`,
     });
 
-    return res.json({ success: true, message: 'Verification code sent' });
+    console.log("Email sent:", info.response); // Log Gmail response
+    res.json({ success: true, message: "Verification code sent" });
   } catch (err) {
-    console.error('Failed to send email:', err);
-    return res.status(500).json({ success: false, message: 'Failed to send code' });
+    console.error("Failed to send email:", err); // Detailed error
+    res.status(500).json({ success: false, message: "Failed to send verification code" });
   }
 });
 
