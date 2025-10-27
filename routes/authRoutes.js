@@ -112,9 +112,12 @@ const verificationCodes = {};
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.EMAIL_USER, // your Gmail
-    pass: process.env.EMAIL_APP_PASSWORD, // Gmail App Password
+    user: process.env.EMAIL_USER,        // your Gmail
+    pass: process.env.EMAIL_APP_PASSWORD // Gmail App Password
   },
+  connectionTimeout: 10000, // 10 seconds
+  greetingTimeout: 10000,
+  socketTimeout: 10000
 });
 
 // Verify transporter connection at startup
@@ -126,79 +129,77 @@ transporter.verify((err, success) => {
   }
 });
 
-// Send verification code
+// ---------------- Send Verification Code ----------------
 router.post('/send-code', async (req, res) => {
   const { email } = req.body;
 
-  if (!email) {
-    return res.status(400).json({ success: false, message: "Email is required" });
-  }
+  if (!email) return res.status(400).json({ success: false, message: "Email is required" });
 
   const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit code
   verificationCodes[email] = code;
 
-  console.log(`Attempting to send code ${code} to ${email}`);
-
   try {
-    const info = await transporter.sendMail({
-      from: `"Nexora Support" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'Password Reset Verification Code',
-      text: `Your verification code is: ${code}`,
+    const sendMailPromise = new Promise((resolve, reject) => {
+      transporter.sendMail({
+        from: `"Nexora Support" <${process.env.EMAIL_USER}>`,
+        to: email,
+        subject: 'Password Reset Verification Code',
+        text: `Your verification code is: ${code}`
+      }, (err, info) => {
+        if (err) return reject(err);
+        resolve(info);
+      });
     });
 
-    console.log("Email sent successfully:", info.response);
-    res.json({ success: true, message: "Verification code sent" });
+    // Fail fast if takes more than 10 seconds
+    const info = await Promise.race([
+      sendMailPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Email sending timed out')), 10000))
+    ]);
+
+    console.log("Email sent:", info.response || info);
+    return res.json({ success: true, message: "Verification code sent" });
   } catch (err) {
     console.error("Failed to send email:", err);
-    res.status(500).json({
-      success: false,
-      message: "Failed to send verification code. Check backend logs for details.",
-      error: err.message, // include the error for debugging
-    });
+    return res.status(500).json({ success: false, message: "Failed to send verification code" });
   }
 });
 
-// Verify code
+// ---------------- Verify Code ----------------
 router.post('/verify-code', (req, res) => {
   const { email, code } = req.body;
 
-  if (!email || !code) {
-    return res.status(400).json({ success: false, message: "Email and code are required" });
-  }
+  if (!email || !code) return res.status(400).json({ success: false, message: "Email and code are required" });
 
   if (verificationCodes[email] && verificationCodes[email] === code) {
     delete verificationCodes[email]; // remove after verification
-    return res.json({ success: true });
+    return res.json({ success: true, message: "Code verified" });
   }
 
   return res.status(400).json({ success: false, message: 'Invalid code' });
 });
 
-// Reset password
+// ---------------- Reset Password ----------------
 router.post('/reset-password', async (req, res) => {
   try {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ error: 'Missing email or new password' });
+      return res.status(400).json({ success: false, message: 'Email and new password are required' });
     }
 
     const user = await User.findOne({ email, authProvider: 'local' });
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
     user.password = hashedPassword;
     await user.save();
 
-    console.log(`Password reset successfully for ${email}`);
     return res.json({ success: true, message: 'Password reset successfully' });
   } catch (err) {
     console.error('Reset password error:', err);
-    return res.status(500).json({ error: 'Failed to reset password' });
+    return res.status(500).json({ success: false, message: 'Failed to reset password' });
   }
 });
-
-
 
 export default router;
