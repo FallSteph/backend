@@ -3,7 +3,6 @@ import fetch from "node-fetch"; // or "undici" if using newer Node
 import nodemailer from "nodemailer";
 import User from "../models/User.js"; // adjust path to your User model
 import bcrypt from 'bcrypt';
-import crypto from "crypto";
 
 const router = express.Router();
 
@@ -103,47 +102,44 @@ router.post("/google", async (req, res) => {
   }
 });
 
-// ---------------- EMAIL TRANSPORTER (using Brevo) ----------------
-const transporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false, // fix SSL issues on Render
-  },
-});
-
 // ---------------- FORGOT PASSWORD ----------------
-// --- STEP 1: Forgot Password (send reset code) ---
 router.post("/forgot-password", async (req, res) => {
   try {
     const { email } = req.body;
-
-    // Check if email exists in DB
     const user = await User.findOne({ email });
-    if (!user) {
+    if (!user)
       return res.status(404).json({ message: "No user found with that email." });
-    }
 
-    // Generate 6-digit code
+    // Generate code and save
     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-
-    // Save code temporarily to user document
     user.resetCode = resetCode;
     await user.save();
 
-    const mailOptions = {
-      from: process.env.EMAIL_FROM,
-      to: email,
-      subject: "Password Reset Code",
-      html: `<p>Hello, this is your Password Reset Code: <strong>${resetCode}</strong></p>`,
-    };
+    // --- Send email via Brevo HTTPS API ---
+    await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "api-key": process.env.BREVO_API_KEY,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        sender: { name: "Nexora Support", email: process.env.EMAIL_FROM },
+        to: [{ email }],
+        subject: "Password Reset Code",
+        htmlContent: `
+          <html>
+            <body>
+              <p>Hello ${user.firstName || ""},</p>
+              <p>Your password reset code is:</p>
+              <h2>${resetCode}</h2>
+              <p>This code will expire soon.</p>
+            </body>
+          </html>
+        `,
+      }),
+    });
 
-    await transporter.sendMail(mailOptions);
     res.json({ message: "Reset code sent to email." });
   } catch (err) {
     console.error("Error in forgot-password:", err);
@@ -151,17 +147,14 @@ router.post("/forgot-password", async (req, res) => {
   }
 });
 
-// --- STEP 2: Verify Code ---
+// ---------------- VERIFY CODE ----------------
 router.post("/verify-code", async (req, res) => {
   try {
     const { email, code } = req.body;
-
     const user = await User.findOne({ email });
-    if (!user || user.resetCode !== code) {
+    if (!user || user.resetCode !== code)
       return res.status(400).json({ message: "Invalid or incorrect code." });
-    }
 
-    // Mark as verified (optional: store flag or expire code)
     user.resetCodeVerified = true;
     await user.save();
 
@@ -172,23 +165,18 @@ router.post("/verify-code", async (req, res) => {
   }
 });
 
-// --- STEP 3: Reset Password ---
+// ---------------- RESET PASSWORD ----------------
 router.post("/reset-password", async (req, res) => {
   try {
     const { email, password } = req.body;
-
     const user = await User.findOne({ email });
-    if (!user || !user.resetCodeVerified) {
+
+    if (!user || !user.resetCodeVerified)
       return res
         .status(400)
         .json({ message: "Code not verified or user not found." });
-    }
 
-    // Hash new password
-    const hashedPassword = await bcrypt.hash(password, 10);
-    user.password = hashedPassword;
-
-    // Clear reset-related fields
+    user.password = await bcrypt.hash(password, 10);
     user.resetCode = undefined;
     user.resetCodeVerified = undefined;
 
