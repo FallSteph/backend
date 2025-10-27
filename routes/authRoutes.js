@@ -3,6 +3,7 @@ import fetch from "node-fetch"; // or "undici" if using newer Node
 import nodemailer from "nodemailer";
 import User from "../models/User.js"; // adjust path to your User model
 import bcrypt from 'bcrypt';
+import crypto from "crypto";
 
 const router = express.Router();
 
@@ -103,10 +104,10 @@ router.post("/google", async (req, res) => {
 });
 
 
-// ----------------- FORGOT PASSWORD -----------------
+// ---------------- FORGOT PASSWORD ----------------
 const verificationCodes = {};
 
-// Setup Gmail transporter
+// Gmail Transporter
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -115,71 +116,88 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// 1️⃣ Request password reset — send email with secure token link
-router.post("/forgot-password", async (req, res) => {
+// Send verification code
+router.post("/send-code", async (req, res) => {
+  const { email } = req.body;
+  if (!email)
+    return res
+      .status(400)
+      .json({ success: false, message: "Email is required" });
+
+  const user = await User.findOne({ email, authProvider: "local" });
+  if (!user)
+    return res
+      .status(404)
+      .json({ success: false, message: "No user found with this email" });
+
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  verificationCodes[email] = code;
+
   try {
-    const { email } = req.body;
-    const user = await User.findOne({ email, authProvider: "local" });
-
-    if (!user) return res.status(404).json({ error: "No user found with this email" });
-
-    const token = crypto.randomBytes(32).toString("hex");
-    user.resetPasswordToken = token;
-    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
-    await user.save();
-
-    const resetUrl = `${process.env.CLIENT_URL}/reset-password?token=${token}`;
-
     await transporter.sendMail({
-      from: process.env.EMAIL_FROM,
-      to: user.email,
-      subject: "Password Reset Request",
-      text: `You requested a password reset. Click the link below to set a new password:\n\n${resetUrl}\n\nIf you didn’t request this, please ignore this email.`,
+      from: `"Nexora Support" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: "Password Reset Verification Code",
+      text: `Your password reset code is: ${code}`,
     });
 
-    return res.json({ success: true, message: "Password reset email sent" });
+    return res.json({
+      success: true,
+      message: "Verification code sent successfully",
+    });
   } catch (err) {
-    console.error("Forgot password error:", err);
-    return res.status(500).json({ error: "Failed to send reset email" });
+    console.error("Failed to send email:", err);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to send verification code" });
   }
 });
 
-// ---------------- Send Verification Code ----------------
-router.post("/verify-code", async (req, res) => {
-  try {
-    const { email, code } = req.body;
-    const user = await User.findOne({ email });
+// Verify code
+router.post("/verify-code", (req, res) => {
+  const { email, code } = req.body;
 
-    if (!user || user.resetCode !== code)
-      return res.status(400).json({ message: "Invalid code" });
+  if (!email || !code)
+    return res
+      .status(400)
+      .json({ success: false, message: "Email and code are required" });
 
-    if (user.resetCodeExpires < new Date())
-      return res.status(400).json({ message: "Code expired" });
-
-    res.json({ message: "Code verified successfully!" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to verify code" });
+  if (verificationCodes[email] === code) {
+    delete verificationCodes[email];
+    return res.json({ success: true, message: "Code verified" });
   }
+
+  return res
+    .status(400)
+    .json({ success: false, message: "Invalid or expired code" });
 });
 
-// ---------------- Reset Password ----------------
+// Reset password
 router.post("/reset-password", async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ email });
 
-    if (!user) return res.status(400).json({ message: "User not found" });
+    if (!email || !password)
+      return res
+        .status(400)
+        .json({ success: false, message: "Email and password are required" });
 
-    user.password = password; // ✅ you can later add bcrypt hash here
-    user.resetCode = null;
-    user.resetCodeExpires = null;
+    const user = await User.findOne({ email, authProvider: "local" });
+    if (!user)
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    user.password = hashedPassword;
     await user.save();
 
-    res.json({ message: "Password reset successfully!" });
+    return res.json({ success: true, message: "Password reset successful" });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to reset password" });
+    console.error("Reset password error:", err);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to reset password" });
   }
 });
 
