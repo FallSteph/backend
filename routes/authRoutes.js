@@ -58,18 +58,33 @@ router.post("/login", async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({ error: "Missing email or password" });
     }
+    
+    // 🧩 Verify reCAPTCHA token with Google
+    const recaptchaRes = await fetch(
+      `https://www.google.com/recaptcha/api/siteverify`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          secret: process.env.RECAPTCHA_SECRET_KEY,
+          response: recaptchaToken,
+        }),
+      }
+    );
 
-    // Find user by email and local auth
+    const recaptchaData = await recaptchaRes.json();
+
+    if (!recaptchaData.success || recaptchaData.score < 0.5) {
+      // score check for v3 (optional), ignore if v2
+      return res.status(400).json({ error: "Failed reCAPTCHA verification" });
+    }
+
+    // ✅ If reCAPTCHA passes, continue normal login
     const user = await User.findOne({ email, authProvider: "local" });
-    if (!user) {
-      return res.status(400).json({ error: "Invalid credentials" });
-    }
+    if (!user) return res.status(400).json({ error: "Invalid credentials" });
 
-    // Compare hashed password
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ error: "Invalid credentials" });
-    }
+    if (!isMatch) return res.status(400).json({ error: "Invalid credentials" });
 
     return res.status(200).json({ success: true, user });
   } catch (err) {
