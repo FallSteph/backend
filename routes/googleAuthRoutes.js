@@ -10,6 +10,7 @@ router.post("/google", async (req, res) => {
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: "Token is required" });
 
+    // Fetch user info from Google
     const googleRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -19,6 +20,7 @@ router.post("/google", async (req, res) => {
 
     const { email, given_name, family_name, picture } = profile;
 
+    // Find or create user in MongoDB
     let user = await User.findOne({ email, authProvider: "google" });
 
     if (!user) {
