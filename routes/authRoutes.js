@@ -104,12 +104,7 @@ router.post("/google", async (req, res) => {
 
 
 // ----------------- FORGOT PASSWORD -----------------
-
-// Temporary in-memory store for verification codes
 const verificationCodes = {};
-
-// Nodemailer setup using Gmail App Password
-// ---------------- FORGOT PASSWORD (Send Reset Link) ----------------
 
 // Setup Gmail transporter
 const transporter = nodemailer.createTransport({
@@ -150,75 +145,41 @@ router.post("/forgot-password", async (req, res) => {
 });
 
 // ---------------- Send Verification Code ----------------
-router.post('/send-code', async (req, res) => {
-  const { email } = req.body;
-
-  if (!email) return res.status(400).json({ success: false, message: "Email is required" });
-
-  const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit code
-  verificationCodes[email] = code;
-
+router.post("/verify-code", async (req, res) => {
   try {
-    const sendMailPromise = new Promise((resolve, reject) => {
-      transporter.sendMail({
-        from: `"Nexora Support" <${process.env.EMAIL_USER}>`,
-        to: email,
-        subject: 'Password Reset Verification Code',
-        text: `Your verification code is: ${code}`
-      }, (err, info) => {
-        if (err) return reject(err);
-        resolve(info);
-      });
-    });
+    const { email, code } = req.body;
+    const user = await User.findOne({ email });
 
-    // Fail fast if takes more than 10 seconds
-    const info = await Promise.race([
-      sendMailPromise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Email sending timed out')), 10000))
-    ]);
+    if (!user || user.resetCode !== code)
+      return res.status(400).json({ message: "Invalid code" });
 
-    console.log("Email sent:", info.response || info);
-    return res.json({ success: true, message: "Verification code sent" });
+    if (user.resetCodeExpires < new Date())
+      return res.status(400).json({ message: "Code expired" });
+
+    res.json({ message: "Code verified successfully!" });
   } catch (err) {
-    console.error("Failed to send email:", err);
-    return res.status(500).json({ success: false, message: "Failed to send verification code" });
+    console.error(err);
+    res.status(500).json({ message: "Failed to verify code" });
   }
-});
-
-// ---------------- Verify Code ----------------
-router.post('/verify-code', (req, res) => {
-  const { email, code } = req.body;
-
-  if (!email || !code) return res.status(400).json({ success: false, message: "Email and code are required" });
-
-  if (verificationCodes[email] && verificationCodes[email] === code) {
-    delete verificationCodes[email]; // remove after verification
-    return res.json({ success: true, message: "Code verified" });
-  }
-
-  return res.status(400).json({ success: false, message: 'Invalid code' });
 });
 
 // ---------------- Reset Password ----------------
-router.post('/reset-password', async (req, res) => {
+router.post("/reset-password", async (req, res) => {
   try {
     const { email, password } = req.body;
+    const user = await User.findOne({ email });
 
-    if (!email || !password) {
-      return res.status(400).json({ success: false, message: 'Email and new password are required' });
-    }
+    if (!user) return res.status(400).json({ message: "User not found" });
 
-    const user = await User.findOne({ email, authProvider: 'local' });
-    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    user.password = hashedPassword;
+    user.password = password; // ✅ you can later add bcrypt hash here
+    user.resetCode = null;
+    user.resetCodeExpires = null;
     await user.save();
 
-    return res.json({ success: true, message: 'Password reset successfully' });
+    res.json({ message: "Password reset successfully!" });
   } catch (err) {
-    console.error('Reset password error:', err);
-    return res.status(500).json({ success: false, message: 'Failed to reset password' });
+    console.error(err);
+    res.status(500).json({ message: "Failed to reset password" });
   }
 });
 

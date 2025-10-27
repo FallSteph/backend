@@ -8,6 +8,10 @@ const userSchema = new mongoose.Schema({
   role: { type: String, enum: ["user", "admin"], default: "user" },
   avatar: String,
   authProvider: { type: String, enum: ["local", "google"], default: "local" },
+
+  // 🔽 Added for Forgot Password feature
+  resetCode: String,
+  resetCodeExpires: Date,
 });
 
 export default mongoose.model("User", userSchema);
