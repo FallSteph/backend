@@ -36,6 +36,35 @@ router.post("/signup", async (req, res) => {
   }
 });
 
+// ----------------- LOGIN -----------------
+router.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: "Missing email or password" });
+    }
+
+    // Find user by email and local auth
+    const user = await User.findOne({ email, authProvider: "local" });
+    if (!user) {
+      return res.status(400).json({ error: "Invalid credentials" });
+    }
+
+    // Compare hashed password
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ error: "Invalid credentials" });
+    }
+
+    return res.status(200).json({ success: true, user });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Login failed" });
+  }
+});
+
+
 // ----------------- GOOGLE LOGIN -----------------
 router.post("/google", async (req, res) => {
   try {
