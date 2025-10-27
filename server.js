@@ -11,6 +11,7 @@ app.use(cors({
   origin: [
     "http://localhost:8080", // local dev
     "https://nexora-fallstephs-projects.vercel.app", // deployed frontend
+    "https://nexora-sage.vercel.app" // another link for frontend
   ],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
