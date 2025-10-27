@@ -105,99 +105,94 @@ router.post("/google", async (req, res) => {
 
 
 // ---------------- FORGOT PASSWORD ----------------
-const verificationCodes = {};
-
-// Gmail Transporter
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
-
-// Send verification code
-router.post("/send-code", async (req, res) => {
-  const { email } = req.body;
-  if (!email)
-    return res
-      .status(400)
-      .json({ success: false, message: "Email is required" });
-
-  const user = await User.findOne({ email, authProvider: "local" });
-  if (!user)
-    return res
-      .status(404)
-      .json({ success: false, message: "No user found with this email" });
-
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
-  verificationCodes[email] = code;
-
+// --- STEP 1: Forgot Password (send reset code) ---
+router.post("/forgot-password", async (req, res) => {
   try {
-    await transporter.sendMail({
-      from: `"Nexora Support" <${process.env.EMAIL_USER}>`,
+    const { email } = req.body;
+
+    // Check if email exists in DB
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "No user found with that email." });
+    }
+
+    // Generate 6-digit code
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Save code temporarily to user document
+    user.resetCode = resetCode;
+    await user.save();
+
+    // Setup mailer
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: "chachacharme05@gmail.com", // use app password
+        pass: "dpacyxdxgvblqahh",
+      },
+    });
+
+    const mailOptions = {
+      from: "chachacharme05@gmail.com",
       to: email,
-      subject: "Password Reset Verification Code",
-      text: `Your password reset code is: ${code}`,
-    });
+      subject: "Password Reset Code",
+      html: `<p>Hello, this is your Password Reset Code: <strong>${resetCode}</strong></p>`,
+    };
 
-    return res.json({
-      success: true,
-      message: "Verification code sent successfully",
-    });
+    await transporter.sendMail(mailOptions);
+    res.json({ message: "Reset code sent to email." });
   } catch (err) {
-    console.error("Failed to send email:", err);
-    return res
-      .status(500)
-      .json({ success: false, message: "Failed to send verification code" });
+    console.error("Error in forgot-password:", err);
+    res.status(500).json({ message: "Server error while sending email." });
   }
 });
 
-// Verify code
-router.post("/verify-code", (req, res) => {
-  const { email, code } = req.body;
+// --- STEP 2: Verify Code ---
+router.post("/verify-code", async (req, res) => {
+  try {
+    const { email, code } = req.body;
 
-  if (!email || !code)
-    return res
-      .status(400)
-      .json({ success: false, message: "Email and code are required" });
+    const user = await User.findOne({ email });
+    if (!user || user.resetCode !== code) {
+      return res.status(400).json({ message: "Invalid or incorrect code." });
+    }
 
-  if (verificationCodes[email] === code) {
-    delete verificationCodes[email];
-    return res.json({ success: true, message: "Code verified" });
+    // Mark as verified (optional: store flag or expire code)
+    user.resetCodeVerified = true;
+    await user.save();
+
+    res.json({ message: "Code verified. You may now reset your password." });
+  } catch (err) {
+    console.error("Error verifying code:", err);
+    res.status(500).json({ message: "Server error verifying code." });
   }
-
-  return res
-    .status(400)
-    .json({ success: false, message: "Invalid or expired code" });
 });
 
-// Reset password
+// --- STEP 3: Reset Password ---
 router.post("/reset-password", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password)
+    const user = await User.findOne({ email });
+    if (!user || !user.resetCodeVerified) {
       return res
         .status(400)
-        .json({ success: false, message: "Email and password are required" });
+        .json({ message: "Code not verified or user not found." });
+    }
 
-    const user = await User.findOne({ email, authProvider: "local" });
-    if (!user)
-      return res
-        .status(404)
-        .json({ success: false, message: "User not found" });
-
+    // Hash new password
     const hashedPassword = await bcrypt.hash(password, 10);
     user.password = hashedPassword;
-    await user.save();
 
-    return res.json({ success: true, message: "Password reset successful" });
+    // Clear reset-related fields
+    user.resetCode = undefined;
+    user.resetCodeVerified = undefined;
+
+    await user.save();
+    res.json({ message: "Password reset successful. You may now log in." });
   } catch (err) {
-    console.error("Reset password error:", err);
-    return res
-      .status(500)
-      .json({ success: false, message: "Failed to reset password" });
+    console.error("Error resetting password:", err);
+    res.status(500).json({ message: "Server error resetting password." });
   }
 });
 

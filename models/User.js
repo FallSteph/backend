@@ -4,14 +4,14 @@ const userSchema = new mongoose.Schema({
   firstName: String,
   lastName: String,
   email: { type: String, unique: true, required: true },
-  password: String, // optional for Google users
+  password: String,
   role: { type: String, enum: ["user", "admin"], default: "user" },
   avatar: String,
   authProvider: { type: String, enum: ["local", "google"], default: "local" },
 
-  // 🔽 Added for Forgot Password feature
+  // Forgot password fields
   resetCode: String,
-  resetCodeExpires: Date,
+  resetCodeVerified: { type: Boolean, default: false },
 });
 
 export default mongoose.model("User", userSchema);
