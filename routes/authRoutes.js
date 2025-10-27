@@ -53,7 +53,7 @@ router.post("/signup", async (req, res) => {
 // ----------------- LOGIN -----------------
 router.post("/login", async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, recaptchaToken  } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ error: "Missing email or password" });
@@ -211,7 +211,6 @@ router.post("/reset-password", async (req, res) => {
 
     await user.save();
     res.json({ message: "Password reset successful. You may now log in." });
-    navigate('/login')
   } catch (err) {
     console.error("Error resetting password:", err);
     res.status(500).json({ message: "Server error resetting password." });
