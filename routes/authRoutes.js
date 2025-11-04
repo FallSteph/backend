@@ -1,8 +1,8 @@
 import express from "express";
-import fetch from "node-fetch"; // or "undici" if using newer Node
+import fetch from "node-fetch"; // or "undici" for Node 18+
 import nodemailer from "nodemailer";
-import User from "../models/User.js"; // adjust path to your User model
-import bcrypt from 'bcrypt';
+import User from "../models/User.js";
+import bcrypt from "bcrypt";
 
 const router = express.Router();
 
@@ -30,7 +30,8 @@ router.post("/signup", async (req, res) => {
     }
 
     const existingUser = await User.findOne({ email });
-    if (existingUser) return res.status(400).json({ error: "User already exists" });
+    if (existingUser)
+      return res.status(400).json({ error: "User already exists" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -50,17 +51,18 @@ router.post("/signup", async (req, res) => {
   }
 });
 
-// ----------------- LOGIN -----------------
+// ----------------- LOGIN (with reCAPTCHA) -----------------
 router.post("/login", async (req, res) => {
   try {
     const { email, password, recaptchaToken } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({ error: "Missing email or password" });
+    if (!email || !password || !recaptchaToken) {
+      return res.status(400).json({ error: "Missing fields" });
     }
 
     // 🧩 Verify reCAPTCHA v2 token with Google
-    const recaptchaRes = await fetch("https://www.google.com/recaptcha/api/siteverify", {
+    const googleVerifyURL = "https://www.google.com/recaptcha/api/siteverify";
+    const recaptchaResponse = await fetch(googleVerifyURL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -69,11 +71,9 @@ router.post("/login", async (req, res) => {
       }),
     });
 
-    const recaptchaData = await recaptchaRes.json();
-console.log("🧠 reCAPTCHA verification response:", recaptchaData);
+    const recaptchaData = await recaptchaResponse.json();
+    console.log("reCAPTCHA verify result:", recaptchaData);
 
-
-    // ✅ For reCAPTCHA v2, only check `success`
     if (!recaptchaData.success) {
       return res.status(400).json({ error: "Failed reCAPTCHA verification" });
     }
@@ -87,11 +87,10 @@ console.log("🧠 reCAPTCHA verification response:", recaptchaData);
 
     return res.status(200).json({ success: true, user });
   } catch (err) {
-    console.error(err);
+    console.error("Login error:", err);
     return res.status(500).json({ error: "Login failed" });
   }
 });
-
 
 // ----------------- GOOGLE LOGIN -----------------
 router.post("/google", async (req, res) => {
@@ -99,7 +98,6 @@ router.post("/google", async (req, res) => {
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: "Token is required" });
 
-    // Fetch user info from Google
     const googleRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -109,7 +107,6 @@ router.post("/google", async (req, res) => {
 
     const { email, given_name, family_name, picture } = profile;
 
-    // Find or create user in MongoDB
     let user = await User.findOne({ email, authProvider: "google" });
 
     if (!user) {
@@ -138,12 +135,10 @@ router.post("/forgot-password", async (req, res) => {
     if (!user)
       return res.status(404).json({ message: "No user found with that email." });
 
-    // Generate code and save
     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
     user.resetCode = resetCode;
     await user.save();
 
-    // --- Send email via Brevo HTTPS API ---
     await fetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST",
       headers: {
