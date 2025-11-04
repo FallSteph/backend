@@ -72,10 +72,13 @@ router.post("/login", async (req, res) => {
     });
 
     const recaptchaData = await recaptchaResponse.json();
-    console.log("reCAPTCHA verify result:", recaptchaData);
+    console.log("🔍 reCAPTCHA verify result:", recaptchaData);
 
     if (!recaptchaData.success) {
-      return res.status(400).json({ error: "Failed reCAPTCHA verification" });
+      return res.status(400).json({
+        error: "Failed reCAPTCHA verification",
+        details: recaptchaData, // <— show why
+      });
     }
 
     // Continue with login
