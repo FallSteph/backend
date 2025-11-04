@@ -60,6 +60,8 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ error: "Missing fields" });
     }
 
+    console.log("Received reCAPTCHA token:", recaptchaToken);
+
     // 🧩 Verify reCAPTCHA v2 token with Google
     const googleVerifyURL = "https://www.google.com/recaptcha/api/siteverify";
     const recaptchaResponse = await fetch(googleVerifyURL, {
