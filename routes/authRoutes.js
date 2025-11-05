@@ -65,23 +65,23 @@ router.post("/login", async (req, res) => {
     // 🧩 Verify reCAPTCHA v2 token with Google
     const googleVerifyURL = "https://www.google.com/recaptcha/api/siteverify";
     const recaptchaResponse = await fetch(googleVerifyURL, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        secret: process.env.RECAPTCHA_SECRET_KEY,
-        response: recaptchaToken,
-      }),
-    });
+  method: "POST",
+  headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  body: new URLSearchParams({
+    secret: process.env.RECAPTCHA_SECRET_KEY,
+    response: recaptchaToken,
+  }),
+});
 
-    const recaptchaData = await recaptchaResponse.json();
-    console.log("🔍 reCAPTCHA verify result:", recaptchaData);
+const recaptchaData = await recaptchaResponse.json();
+console.log("🔍 reCAPTCHA verify result:", recaptchaData);
 
-    if (!recaptchaData.success) {
-      return res.status(400).json({
-        error: "Failed reCAPTCHA verification",
-        details: recaptchaData, // <— show why
-      });
-    }
+if (!recaptchaData.success) {
+  return res.status(400).json({
+    error: "Failed reCAPTCHA verification",
+    details: recaptchaData,
+  });
+}
 
     // Continue with login
     const user = await User.findOne({ email, authProvider: "local" });
