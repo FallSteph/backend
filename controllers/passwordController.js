@@ -1,62 +1,52 @@
 import User from "../models/User.js";
-import bcrypt from "bcryptjs";
+import PasswordReset from "../models/PasswordReset.js";
 import nodemailer from "nodemailer";
 
-let codeStore = {}; // Temporary store for test codes (use DB or Redis in production)
+// 🔹 Send Email Helper
+async function sendResetEmail(toEmail, code) {
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS, // Gmail App Password
+    },
+  });
 
-// Send verification code to email
-export const sendResetCode = async (req, res) => {
-  const { email } = req.body;
+  const mailOptions = {
+    from: `"${process.env.EMAIL_FROM_NAME || "Nexora"}" <${process.env.EMAIL_USER}>`,
+    to: toEmail,
+    subject: "Password Reset Code",
+    html: `
+      <h2>Password Reset Request</h2>
+      <p>Use this code to reset your password:</p>
+      <h3>${code}</h3>
+      <p>This code will expire in 15 minutes.</p>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+}
+
+// 🔹 Request Password Reset
+export const forgotPassword = async (req, res) => {
   try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: "Email is required" });
+
     const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ error: "Email not found" });
+    if (!user) return res.json({ ok: true }); // silent fail for security
 
     const code = Math.floor(100000 + Math.random() * 900000).toString();
-    codeStore[email] = code;
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
-    // send email
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-    });
+    // Invalidate old codes
+    await PasswordReset.updateMany({ email }, { used: true });
+    await PasswordReset.create({ email, code, expiresAt });
 
-    /*await transporter.sendMail({
-      from: `"Nexora Support" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: "Password Reset Code",
-      text: `Your verification code is: ${code}`,
-    });*/
-
-    res.json({ message: "Verification code sent!" });
+    await sendResetEmail(email, code);
+    res.json({ ok: true, message: "If the email exists, a reset code has been sent." });
   } catch (err) {
-    res.status(500).json({ error: "Failed to send code" });
-  }
-};
-
-// Verify code
-export const verifyResetCode = (req, res) => {
-  const { email, code } = req.body;
-  if (codeStore[email] && codeStore[email] === code) {
-    res.json({ message: "Code verified" });
-  } else {
-    res.status(400).json({ error: "Invalid code" });
-  }
-};
-
-// Reset password
-export const resetPassword = async (req, res) => {
-  const { email, newPassword } = req.body;
-  try {
-    const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    const hashed = await bcrypt.hash(newPassword, 10);
-    user.password = hashed;
-    await user.save();
-    delete codeStore[email];
-
-    res.json({ message: "Password updated successfully" });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to reset password" });
+    console.error("Forgot password error:", err);
+    res.status(500).json({ message: "Server error." });
   }
 };

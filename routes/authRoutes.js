@@ -2,6 +2,7 @@ import express from "express";
 import fetch from "node-fetch"; // or "undici" for Node 18+
 import nodemailer from "nodemailer";
 import User from "../models/User.js";
+import Notification from "../models/Notification.js";
 import bcrypt from "bcrypt";
 
 const router = express.Router();
@@ -20,6 +21,26 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+// ---------------- PASSWORD VALIDATION ----------------
+const validatePassword = (password) => {
+  if (password.length < 8) {
+    return { valid: false, message: "Password must be at least 8 characters long" };
+  }
+  if (!/[A-Z]/.test(password)) {
+    return { valid: false, message: "Password must contain at least one uppercase letter" };
+  }
+  if (!/[a-z]/.test(password)) {
+    return { valid: false, message: "Password must contain at least one lowercase letter" };
+  }
+  if (!/[0-9]/.test(password)) {
+    return { valid: false, message: "Password must contain at least one number" };
+  }
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+    return { valid: false, message: "Password must contain at least one special character" };
+  }
+  return { valid: true, message: "" };
+};
+
 // ---------------- SIGNUP ----------------
 router.post("/signup", async (req, res) => {
   try {
@@ -27,6 +48,12 @@ router.post("/signup", async (req, res) => {
 
     if (!firstName || !lastName || !email || !password) {
       return res.status(400).json({ error: "Missing fields" });
+    }
+
+    // Validate password strength
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.valid) {
+      return res.status(400).json({ error: passwordValidation.message });
     }
 
     const existingUser = await User.findOne({ email });
@@ -42,6 +69,14 @@ router.post("/signup", async (req, res) => {
       password: hashedPassword,
       role: "user",
       authProvider: "local",
+    });
+
+    await Notification.create({
+      userEmail: process.env.ADMIN_EMAIL, // admin recipient
+      message: `New user registered: ${firstName} ${lastName} (${email})`,
+      type: "new_signup",
+      read: false,
+      addedBy: email,
     });
 
     return res.status(201).json({ success: true, user: newUser });
@@ -204,6 +239,12 @@ router.post("/reset-password", async (req, res) => {
         .status(400)
         .json({ message: "Code not verified or user not found." });
 
+    // Validate new password strength
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.valid) {
+      return res.status(400).json({ message: passwordValidation.message });
+    }
+
     user.password = await bcrypt.hash(password, 10);
     user.resetCode = undefined;
     user.resetCodeVerified = undefined;
@@ -215,5 +256,6 @@ router.post("/reset-password", async (req, res) => {
     res.status(500).json({ message: "Server error resetting password." });
   }
 });
+  
 
 export default router;
