@@ -6,6 +6,7 @@ const boardSchema = new mongoose.Schema(
     description: { type: String, default: "" },
     userEmail: { type: String, required: true },
     dueDate: { type: Date, default: null },
+    status: { type: String, enum: ["ongoing", "done"], default: "ongoing" }, // ✅ FROM FILE 2
 
     lists: [
       {
@@ -19,7 +20,17 @@ const boardSchema = new mongoose.Schema(
             labels: [String],
             assignedMembers: [String],
             dueDate: Date, // ✅ Card-level due date
-            attachments: [String],
+            status: { type: String, enum: ["ongoing", "done"], default: "ongoing" }, // ✅ FROM FILE 2
+            attachments: [
+              {
+                id: String,        // Google Drive file ID
+                name: String,      // Original file name
+                url: String,       // Direct view link
+                webViewLink: String, // Google Drive view link
+                uploadedBy: String, // User email/ID
+                uploadedAt: { type: Date, default: Date.now }
+              }
+            ], // ✅ ENHANCED FROM FILE 2
             comments: [
               {
                 _id: { type: mongoose.Schema.Types.ObjectId, auto: true },
@@ -36,10 +47,16 @@ const boardSchema = new mongoose.Schema(
     members: [
       {
         email: String,
-        name:String,
-        role: { type: String, enum: ["member", "manager"], default: "member" },
+        name: String,
+        role: { type: String, enum: ["member", "manager", "instructor"], default: "member" }
       },
     ],
+
+    // 🎨 Board color customization
+    color: { 
+      type: String, 
+      default: 'gradient-purple-blue' 
+    },
 
     // 🗑️ Soft delete support
     deleted: { type: Boolean, default: false },

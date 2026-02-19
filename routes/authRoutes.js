@@ -1,261 +1,29 @@
 import express from "express";
-import fetch from "node-fetch"; // or "undici" for Node 18+
-import nodemailer from "nodemailer";
-import User from "../models/User.js";
-import Notification from "../models/Notification.js";
-import bcrypt from "bcrypt";
+import { signup, login, googleLogin, verifyToken, updateProfile } from "../controllers/authController.js";
+import {  getNotificationSettings,updateNotificationSettings, resetNotificationSettings } from "../controllers/notificationController.js";
+import { trackAuthActivity } from "../middleware/activity.js";
+import { authMiddleware } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// ---------------- EMAIL TRANSPORTER (Brevo SMTP) ----------------
-const transporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false,
-  },
-});
-
-// ---------------- PASSWORD VALIDATION ----------------
-const validatePassword = (password) => {
-  if (password.length < 8) {
-    return { valid: false, message: "Password must be at least 8 characters long" };
-  }
-  if (!/[A-Z]/.test(password)) {
-    return { valid: false, message: "Password must contain at least one uppercase letter" };
-  }
-  if (!/[a-z]/.test(password)) {
-    return { valid: false, message: "Password must contain at least one lowercase letter" };
-  }
-  if (!/[0-9]/.test(password)) {
-    return { valid: false, message: "Password must contain at least one number" };
-  }
-  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
-    return { valid: false, message: "Password must contain at least one special character" };
-  }
-  return { valid: true, message: "" };
-};
-
 // ---------------- SIGNUP ----------------
-router.post("/signup", async (req, res) => {
-  try {
-    const { firstName, lastName, email, password } = req.body;
-
-    if (!firstName || !lastName || !email || !password) {
-      return res.status(400).json({ error: "Missing fields" });
-    }
-
-    // Validate password strength
-    const passwordValidation = validatePassword(password);
-    if (!passwordValidation.valid) {
-      return res.status(400).json({ error: passwordValidation.message });
-    }
-
-    const existingUser = await User.findOne({ email });
-    if (existingUser)
-      return res.status(400).json({ error: "User already exists" });
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const newUser = await User.create({
-      firstName,
-      lastName,
-      email,
-      password: hashedPassword,
-      role: "user",
-      authProvider: "local",
-    });
-
-    await Notification.create({
-      userEmail: process.env.ADMIN_EMAIL, // admin recipient
-      message: `New user registered: ${firstName} ${lastName} (${email})`,
-      type: "new_signup",
-      read: false,
-      addedBy: email,
-    });
-
-    return res.status(201).json({ success: true, user: newUser });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "Signup failed" });
-  }
-});
+router.post("/signup", trackAuthActivity("signup_attempt"), signup);
 
 // ----------------- LOGIN (with reCAPTCHA) -----------------
-router.post("/login", async (req, res) => {
-  try {
-    const { email, password, recaptchaToken } = req.body;
-
-    if (!email || !password || !recaptchaToken) {
-      return res.status(400).json({ error: "Missing fields" });
-    }
-
-    console.log("Received reCAPTCHA token:", recaptchaToken);
-
-    // 🧩 Verify reCAPTCHA v2 token with Google
-    const googleVerifyURL = "https://www.google.com/recaptcha/api/siteverify";
-    const recaptchaResponse = await fetch(googleVerifyURL, {
-  method: "POST",
-  headers: { "Content-Type": "application/x-www-form-urlencoded" },
-  body: new URLSearchParams({
-    secret: process.env.RECAPTCHA_SECRET_KEY,
-    response: recaptchaToken,
-  }),
-});
-
-const recaptchaData = await recaptchaResponse.json();
-console.log("🔍 reCAPTCHA verify result:", recaptchaData);
-
-if (!recaptchaData.success) {
-  return res.status(400).json({
-    error: "Failed reCAPTCHA verification",
-    details: recaptchaData,
-  });
-}
-
-    // Continue with login
-    const user = await User.findOne({ email, authProvider: "local" });
-    if (!user) return res.status(400).json({ error: "Invalid credentials" });
-
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ error: "Invalid credentials" });
-
-    return res.status(200).json({ success: true, user });
-  } catch (err) {
-    console.error("Login error:", err);
-    return res.status(500).json({ error: "Login failed" });
-  }
-});
+router.post("/login", trackAuthActivity("login_attempt"), login);
 
 // ----------------- GOOGLE LOGIN -----------------
-router.post("/google", async (req, res) => {
-  try {
-    const { token } = req.body;
-    if (!token) return res.status(400).json({ error: "Token is required" });
+router.post("/google", googleLogin);
 
-    const googleRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const profile = await googleRes.json();
+// ---------------- TOKEN VERIFICATION (FROM FILE 1) ----------------
+router.get("/verify", verifyToken);
 
-    if (!profile.email) return res.status(400).json({ error: "Invalid Google token" });
+// ---------------- UPDATE PROFILE ----------------
+router.put("/profile", authMiddleware, trackAuthActivity("profile_update"), updateProfile);
 
-    const { email, given_name, family_name, picture } = profile;
-
-    let user = await User.findOne({ email, authProvider: "google" });
-
-    if (!user) {
-      user = await User.create({
-        firstName: given_name,
-        lastName: family_name,
-        email,
-        avatar: picture,
-        role: "user",
-        authProvider: "google",
-      });
-    }
-
-    return res.status(200).json({ success: true, user });
-  } catch (err) {
-    console.error("Google login error:", err);
-    return res.status(500).json({ error: "Google login failed" });
-  }
-});
-
-// ---------------- FORGOT PASSWORD ----------------
-router.post("/forgot-password", async (req, res) => {
-  try {
-    const { email } = req.body;
-    const user = await User.findOne({ email });
-    if (!user)
-      return res.status(404).json({ message: "No user found with that email." });
-
-    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-    user.resetCode = resetCode;
-    await user.save();
-
-    await fetch("https://api.brevo.com/v3/smtp/email", {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        "api-key": process.env.BREVO_API_KEY,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        sender: { name: "Nexora Support", email: process.env.EMAIL_FROM },
-        to: [{ email }],
-        subject: "Password Reset Code",
-        htmlContent: `
-          <html>
-            <body>
-              <p>Hello ${user.firstName || ""},</p>
-              <p>Your password reset code is:</p>
-              <h2>${resetCode}</h2>
-              <p>This code will expire soon.</p>
-            </body>
-          </html>
-        `,
-      }),
-    });
-
-    res.json({ message: "Reset code sent to email." });
-  } catch (err) {
-    console.error("Error in forgot-password:", err);
-    res.status(500).json({ message: "Server error while sending email." });
-  }
-});
-
-// ---------------- VERIFY CODE ----------------
-router.post("/verify-code", async (req, res) => {
-  try {
-    const { email, code } = req.body;
-    const user = await User.findOne({ email });
-    if (!user || user.resetCode !== code)
-      return res.status(400).json({ message: "Invalid or incorrect code." });
-
-    user.resetCodeVerified = true;
-    await user.save();
-
-    res.json({ message: "Code verified. You may now reset your password." });
-  } catch (err) {
-    console.error("Error verifying code:", err);
-    res.status(500).json({ message: "Server error verifying code." });
-  }
-});
-
-// ---------------- RESET PASSWORD ----------------
-router.post("/reset-password", async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email });
-
-    if (!user || !user.resetCodeVerified)
-      return res
-        .status(400)
-        .json({ message: "Code not verified or user not found." });
-
-    // Validate new password strength
-    const passwordValidation = validatePassword(password);
-    if (!passwordValidation.valid) {
-      return res.status(400).json({ message: passwordValidation.message });
-    }
-
-    user.password = await bcrypt.hash(password, 10);
-    user.resetCode = undefined;
-    user.resetCodeVerified = undefined;
-
-    await user.save();
-    res.json({ message: "Password reset successful. You may now log in." });
-  } catch (err) {
-    console.error("Error resetting password:", err);
-    res.status(500).json({ message: "Server error resetting password." });
-  }
-});
-  
+// ✅ NEW: NOTIFICATION SETTINGS ROUTES ----------------
+router.get("/notification-settings", authMiddleware, getNotificationSettings);
+router.put("/notification-settings", authMiddleware, updateNotificationSettings);
+router.post("/notification-settings/reset", authMiddleware, resetNotificationSettings);
 
 export default router;

@@ -18,6 +18,7 @@ const notificationSchema = new mongoose.Schema({
   read: {
     type: Boolean,
     default: false,
+    index: true,
   },
   boardId: {
     type: String,
@@ -31,12 +32,13 @@ const notificationSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now,
-    expires: 60 * 60 * 24 * 30,
+    expires: 60 * 60 * 24 * 30, // ← Simpler: 30 days TTL
   },
 });
 
-// Index for efficient queries
-notificationSchema.index({ userEmail: 1, createdAt: -1 });
-notificationSchema.index({ read: 1 });
+// Compound index: get newest notifications for a user, optionally unread
+notificationSchema.index({ userEmail: 1, read: 1, createdAt: -1 });
 
-export default mongoose.model("Notification", notificationSchema);
+const Notification = mongoose.model("Notification", notificationSchema);
+
+export default Notification;

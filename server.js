@@ -7,6 +7,7 @@ import userRoutes from './routes/userRoutes.js';
 import boardRoutes from "./routes/boardRoutes.js";
 import forgotPasswordRoutes from './routes/forgotPasswordRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import reportRoutes from "./routes/reportRoutes.js";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -24,7 +25,7 @@ app.use(cors({
     "https://nexora-fallstephs-projects.vercel.app", // deployed frontend
     "https://nexora-sage.vercel.app" // another link for frontend
   ],
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  methods: ["GET","PATCH","POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true, // <-- important for cookies / auth
 }));
@@ -32,7 +33,7 @@ app.use(cors({
 // Handle preflight explicitly
 app.options(/.*/, cors({
   origin: "*",
-  methods: ["GET","POST","PUT","DELETE","OPTIONS"],
+  methods: ["GET","PATCH","POST","PUT","DELETE","OPTIONS"],
   allowedHeaders: ["Content-Type","Authorization"],
   credentials: true
 }));
@@ -54,6 +55,9 @@ app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.use("/api/boards", boardRoutes);
 app.use("/api/auth/forgot", forgotPasswordRoutes);
 app.use('/api/notifications', notificationRoutes);
+
+// report
+app.use("/api/report", reportRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

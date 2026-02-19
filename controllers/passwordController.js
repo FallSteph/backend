@@ -1,3 +1,4 @@
+import bcrypt from "bcrypt"
 import User from "../models/User.js";
 import PasswordReset from "../models/PasswordReset.js";
 import nodemailer from "nodemailer";
@@ -48,5 +49,59 @@ export const forgotPassword = async (req, res) => {
   } catch (err) {
     console.error("Forgot password error:", err);
     res.status(500).json({ message: "Server error." });
+  }
+};
+
+// 🔹 Verify code
+export const verifyCode = async (req, res) => {
+  try {
+    const { email, code } = req.body;
+    if (!email || !code) return res.status(400).json({ error: 'Missing fields' });
+
+    const record = await PasswordReset
+      .findOne({ email, code, used: false })
+      .sort({ createdAt: -1 });
+
+    if (!record) return res.status(400).json({ error: 'Invalid code' });
+    if (new Date() > record.expiresAt) return res.status(400).json({ error: 'Code expired' });
+
+    res.json({ ok: true, message: 'Code verified' });
+  } catch (err) {
+    console.error('verify-code error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+// 🔹 Reset password
+export const resetPassword = async (req, res) => {
+  try {
+    const { email, code, password } = req.body;
+    if (!email || !code || !password) return res.status(400).json({ error: 'Missing fields' });
+
+    // Strong password validation
+    const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
+    if (!passwordPattern.test(password)) {
+      return res.status(400).json({
+        error: 'Password must be at least 8 characters long, include 1 uppercase, 1 lowercase, 1 number, and 1 special character.',
+      });
+    }
+
+    const record = await PasswordReset
+      .findOne({ email, code, used: false })
+      .sort({ createdAt: -1 });
+
+    if (!record) return res.status(400).json({ error: 'Invalid or used code' });
+    if (new Date() > record.expiresAt) return res.status(400).json({ error: 'Code expired' });
+
+    const hashed = await bcrypt.hash(password, 10);
+    await User.updateOne({ email }, { $set: { password: hashed } });
+
+    record.used = true;
+    await record.save();
+
+    res.json({ ok: true, message: 'Password successfully reset' });
+  } catch (err) {
+    console.error('reset-password error:', err);
+    res.status(500).json({ error: 'Server error' });
   }
 };
